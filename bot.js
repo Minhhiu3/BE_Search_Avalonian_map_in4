@@ -1,50 +1,48 @@
-// bot.js
-
 import mongoose from "mongoose";
 import connectDB from "./db.js";
 import Map from "./map.schema.js";
 import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
 import { DC_TOKEN, DB_URL } from "./enviroment.js";
 
+// Hằng số để dịch các tên tài nguyên từ database ra Tiếng Việt
 const rssTranslate = {
-    "BLUE": "Rương xanh dương/ Blue chest",
-    "GREEN": "Rương xanh lá/ Green chest",
-    "GOLD": "Rương vàng/ Gold chest",
-    "DUNGEON": "Dungeon group",
+    "BLUE": "Rương xanh dương/ Blue Chest",
+    "GREEN": "Rương xanh lá/ Green Chest",
+    "GOLD": "Rương vàng/ Gold Chest",
+    "DUNGEON": "Group Dungeon = maptier",
     "ROCK": "Đá/ Stone",
-    "LOGS": "Gỗ/ Wood",
-    "IRON": "Quặng/ ore",
-    "HIRE": "Da/ hide",
-    "COTTON": "Bông/ cloth",
+    "LOGS": "Gỗ/ Logs",
+    "IRON": "Quặng/ Ore",
+    "HIRE": "Da/ Hide",
+    "COTTON": "Bông/ Cloth",
 };
 
-
+// Khởi tạo Discord client
 const client = new Client({
     intents: [GatewayIntentBits.Guilds],
 });
 
-
+// Hàm tìm và trả về thông tin map
 async function checkResources(mapName) {
+    // Chỉ cần tìm document, không cần xử lý đếm ở đây
     const doc = await Map.findOne(
         { name: { $regex: new RegExp(`^${mapName}$`, 'i') } },
-        { _id: 0 }
+        { _id: 0, __v: 0 }
     );
-    if (!doc) return null;
-    const counts = {};
-    doc.icons.forEach(icon => {
-        counts[icon] = (counts[icon] || 0) + 1;
-    });
-    return { name: doc.name, tier: doc.tier, counts: counts };
+    return doc;
 }
 
-
+// Hàm tìm các map có tên gần đúng
 async function findMaps(query) {
     if (!query) return [];
-    const maps = await Map.find({ name: { $regex: new RegExp(query, 'i') } }).limit(25);
+    const maps = await Map.find(
+        { name: { $regex: new RegExp(query, 'i') } },
+        { _id: 0, __v: 0 }
+    ).limit(25);
     return maps.map(map => ({ name: map.name, value: map.name }));
 }
 
-
+// Khi bot đã sẵn sàng
 client.on("ready", async () => {
     console.log(`Bot đã đăng nhập với tên: ${client.user.tag}`);
     try {
@@ -55,9 +53,8 @@ client.on("ready", async () => {
     }
 });
 
-
+// Xử lý các tương tác
 client.on("interactionCreate", async (interaction) => {
-    
     if (interaction.isAutocomplete()) {
         const focusedValue = interaction.options.getFocused();
         try {
@@ -68,36 +65,38 @@ client.on("interactionCreate", async (interaction) => {
         }
     }
 
-  
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName === "checkavalonmap") {
             await interaction.deferReply();
             const mapName = interaction.options.getString("mapname");
             try {
-                const result = await checkResources(mapName);
-                if (!result) {
-                    return interaction.editReply(`Viết sai tên rồi "${mapName}".`);
+                const doc = await checkResources(mapName);
+                if (!doc) {
+                    return interaction.editReply(`Không tìm thấy bản đồ "${mapName}".`);
                 }
 
-               
-                const resourceList = Object.entries(result.counts)
-                    .map(([resource, count]) => {
-                        const translatedName = rssTranslate[resource] || resource;
-                        return `• ${translatedName} x${count}`;
-                    })
-                    .join("\n");
+                // Sửa: Xử lý đếm và badge tại đây
+                const resourceList = doc.icons.map(icon => {
+                    const translatedName = rssTranslate[icon.alt] || icon.alt;
+                    // Kiểm tra và hiển thị badge nếu có
+                    if (icon.badge) {
+                        return `• ${translatedName} x${icon.badge}`;
+                    } else {
+                        return `• ${translatedName}`;
+                    }
+                }).join("\n");
 
                 const embed = new EmbedBuilder()
-                    .setTitle(`Thông tin map Avalon: ${result.name}`) 
+                    .setTitle(`Thông tin bản đồ Avalon: ${doc.name}`)
                     .setColor(0x0099FF)
                     .addFields(
-                        { name: 'Tier', value: `T${result.tier}`, inline: true }, 
+                        { name: 'Tier', value: `T${doc.tier}`, inline: true },
                         { name: 'Tài nguyên', value: resourceList, inline: false }
                     )
                     .setTimestamp();
                 interaction.editReply({ embeds: [embed] });
             } catch (error) {
-                console.error("Lỗi khi xử lý :", error);
+                console.error("Lỗi khi xử lý lệnh:", error);
                 interaction.editReply("Đã xảy ra lỗi khi truy vấn dữ liệu.");
             }
         }
