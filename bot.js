@@ -2,10 +2,9 @@ import mongoose from "mongoose";
 import connectDB from "./db.js";
 import Map from "./map.schema.js";
 import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
-import { DC_TOKEN, DB_URL } from "./enviroment.js";
+import { DC_TOKEN } from "./enviroment.js";
 import express from "express";
 
-// Hằng số để dịch các tên tài nguyên từ database ra Tiếng Việt
 const rssTranslate = {
   "BLUE": "Rương xanh dương/ Blue Chest",
   "GREEN": "Rương xanh lá/ Green Chest",
@@ -21,29 +20,30 @@ const rssTranslate = {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// keep alive route
 app.get("/", (req, res) => {
-  res.send("Con chào bố hiếu");
+  res.send("✅ Bot is running and server is alive!");
 });
 
 app.listen(PORT, () => {
   console.log(`Server chạy tại ${PORT}`);
 });
 
-// Khởi tạo Discord client
+// =======================
+// Discord Bot
+// =======================
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-// Hàm tìm và trả về thông tin map
+// check resources
 async function checkResources(mapName) {
-  const doc = await Map.findOne(
+  return await Map.findOne(
     { name: { $regex: new RegExp(`^${mapName}$`, "i") } },
     { _id: 0, __v: 0 }
   );
-  return doc;
 }
 
-// Hàm tìm các map có tên gần đúng
 async function findMaps(query) {
   if (!query) return [];
   const maps = await Map.find(
@@ -53,23 +53,16 @@ async function findMaps(query) {
   return maps.map((map) => ({ name: map.name, value: map.name }));
 }
 
-// =======================
-// Discord Bot Events
-// =======================
-
-// Khi bot đã sẵn sàng
 client.on("ready", async () => {
-  console.log(`Bot đã đăng nhập với tên: ${client.user.tag}`);
+  console.log(`Bot login: ${client.user.tag}`);
   try {
     await connectDB();
-    console.log("Kết nối MongoDB thành công.");
-  } catch (error) {
-    console.error("Lỗi khi kết nối MongoDB:", error);
-    process.exit(1); // restart nếu không kết nối được DB
+    console.log("MongoDB connected.");
+  } catch (err) {
+    console.error("MongoDB error:", err.message);
   }
 });
 
-// Xử lý các tương tác
 client.on("interactionCreate", async (interaction) => {
   if (interaction.isAutocomplete()) {
     const focusedValue = interaction.options.getFocused();
@@ -77,93 +70,73 @@ client.on("interactionCreate", async (interaction) => {
       const choices = await findMaps(focusedValue);
       await interaction.respond(choices);
     } catch (error) {
-      console.error("Lỗi khi xử lý autocomplete:", error);
+      console.error("Autocomplete error:", error);
     }
   }
 
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "checkavalonmap") {
-      await interaction.deferReply();
-      const mapName = interaction.options.getString("mapname");
-      try {
-        const doc = await checkResources(mapName);
-        if (!doc) {
-          return interaction.editReply(
-            `Không tìm thấy bản đồ "${mapName}".`
-          );
-        }
+  if (interaction.isChatInputCommand() && interaction.commandName === "checkavalonmap") {
+    await interaction.deferReply();
+    const mapName = interaction.options.getString("mapname");
+    try {
+      const doc = await checkResources(mapName);
+      if (!doc) return interaction.editReply(`Không tìm thấy bản đồ "${mapName}".`);
 
-        const resourceList = doc.icons
-          .map((icon) => {
-            const translatedName = rssTranslate[icon.alt] || icon.alt;
-            if (icon.badge) {
-              return `• ${translatedName} x${icon.badge}`;
-            } else {
-              return `• ${translatedName}`;
-            }
-          })
-          .join("\n");
+      const resourceList = doc.icons
+        .map((icon) => {
+          const translatedName = rssTranslate[icon.alt] || icon.alt;
+          return icon.badge ? `• ${translatedName} x${icon.badge}` : `• ${translatedName}`;
+        })
+        .join("\n");
 
-        const embed = new EmbedBuilder()
-          .setTitle(`Thông tin bản đồ Avalon: ${doc.name}`)
-          .setColor(0x0099ff)
-          .addFields(
-            { name: "Tier", value: `T${doc.tier}`, inline: true },
-            { name: "Tài nguyên", value: resourceList, inline: false }
-          )
-          .setTimestamp();
-        interaction.editReply({ embeds: [embed] });
-      } catch (error) {
-        console.error("Lỗi khi xử lý lệnh:", error);
-        interaction.editReply("Đã xảy ra lỗi khi truy vấn dữ liệu.");
-      }
+      const embed = new EmbedBuilder()
+        .setTitle(`Thông tin bản đồ Avalon: ${doc.name}`)
+        .setColor(0x0099ff)
+        .addFields(
+          { name: "Tier", value: `T${doc.tier}`, inline: true },
+          { name: "Tài nguyên", value: resourceList, inline: false }
+        )
+        .setTimestamp();
+
+      interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+      console.error("Command error:", err);
+      interaction.editReply("Đã xảy ra lỗi khi truy vấn dữ liệu.");
     }
   }
 });
 
 // =======================
-// Auto-Restart
+// Auto reconnect logic
 // =======================
-let lastHeartbeat = Date.now();
 
+// Nếu DB mất kết nối → reconnect
+mongoose.connection.on("disconnected", () => {
+  console.error("Chết cụ db rồi dcm, reconnect...");
+  setTimeout(connectDB, 5000);
+});
+
+// Nếu bot mất heartbeat → reconnect thay vì kill
+let lastHeartbeat = Date.now();
 client.ws.on("heartbeat", () => {
   lastHeartbeat = Date.now();
 });
 
-// Check mỗi 10s, nếu >30s không có heartbeat thì restart
 setInterval(() => {
-  const diff = Date.now() - lastHeartbeat;
-  if (diff > 30000) {
-    console.error(" Ta mat nhau that roi iem oi. Restart...");
-    process.exit(1);
+  if (Date.now() - lastHeartbeat > 30000) {
+    console.error("Bot mất heartbeat. Reconnect...");
+    client.destroy();
+    client.login(DC_TOKEN);
   }
 }, 10000);
 
-// MongoDB disconnect → restart
-mongoose.connection.on("disconnected", () => {
-  console.error("DB chet cu roi dcm. Restart...");
-  process.exit(1);
-});
-
-// Bắt lỗi bất ngờ
-// Bắt lỗi Promise bị reject mà không có .catch()
+// Catch unhandled errors nhưng không kill
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("[UnHandled Rejection]");
-  console.error("Thời gian:", new Date().toISOString());
-  console.error("Promise:", promise);
-  console.error("Lý do:", reason);
+  console.error("[Unhandled Rejection]", reason);
 });
 
-// Bắt lỗi exception không được try/catch
 process.on("uncaughtException", (err) => {
-  console.error("[Uncaught Exception]");
-  console.error("Thời gian:", new Date().toISOString());
-  console.error("Lỗi:", err.message);
-  console.error("Stack trace:\n", err.stack);
-
-  // Thoát process để Render tự restart
-  process.exit(1);
+  console.error("[Uncaught Exception]", err);
 });
 
-
+// Start bot
 client.login(DC_TOKEN);
