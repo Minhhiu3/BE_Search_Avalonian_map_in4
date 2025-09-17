@@ -1,0 +1,11 @@
+{
+  "builds": [
+    {
+      "src": "bot.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "scripts": {
+    "build": "npm install"
+  }
+}
