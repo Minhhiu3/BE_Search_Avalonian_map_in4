@@ -162,7 +162,7 @@ process.on("uncaughtException", (err) => {
   console.error("Stack trace:\n", err.stack);
 
   // Thoát process để Render tự restart
-  // process.exit(1);
+  process.exit(1);
 });
 
 
