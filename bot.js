@@ -3,6 +3,7 @@ import connectDB from "./db.js";
 import Map from "./map.schema.js";
 import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
 import { DC_TOKEN, DB_URL } from "./enviroment.js";
+import express from "express";
 
 // Hằng số để dịch các tên tài nguyên từ database ra Tiếng Việt
 const rssTranslate = {
@@ -17,6 +18,16 @@ const rssTranslate = {
     "COTTON": "Bông/ Cloth",
 };
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('Con chào bố hiếu');
+});
+
+app.listen(PORT, () => {
+    console.log(`Server chạy tại ${PORT}`);
+});
 // Khởi tạo Discord client
 const client = new Client({
     intents: [GatewayIntentBits.Guilds],
