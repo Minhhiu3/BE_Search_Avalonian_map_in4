@@ -147,7 +147,7 @@ mongoose.connection.on("disconnected", () => {
 
 // Bắt lỗi bất ngờ
 // Bắt lỗi Promise bị reject mà không có .catch()
-process.on("Loi trong promise cua duoc su ly", (reason, promise) => {
+process.on("unhandledRejection", (reason, promise) => {
   console.error("[UnHandled Rejection]");
   console.error("Thời gian:", new Date().toISOString());
   console.error("Promise:", promise);
@@ -155,14 +155,14 @@ process.on("Loi trong promise cua duoc su ly", (reason, promise) => {
 });
 
 // Bắt lỗi exception không được try/catch
-process.on("Trong luc chay co 1 runtime error da xuat hien", (err) => {
+process.on("uncaughtException", (err) => {
   console.error("[Uncaught Exception]");
   console.error("Thời gian:", new Date().toISOString());
   console.error("Lỗi:", err.message);
   console.error("Stack trace:\n", err.stack);
 
   // Thoát process để Render tự restart
-  process.exit(1);
+  // process.exit(1);
 });
 
 
