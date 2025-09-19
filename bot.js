@@ -6,39 +6,59 @@ import { DC_TOKEN } from "./enviroment.js";
 import express from "express";
 
 const rssTranslate = {
-  "BLUE": "Rương xanh dương/ Blue Chest",
-  "GREEN": "Rương xanh lá/ Green Chest",
-  "GOLD": "Rương vàng/ Gold Chest",
-  "DUNGEON": "Group Dungeon = maptier",
-  "ROCK": "Đá/ Stone",
-  "LOGS": "Gỗ/ Logs",
-  "IRON": "Quặng/ Ore",
-  "HIRE": "Da/ Hide",
-  "COTTON": "Bông/ Cloth",
+  BLUE: "Rương xanh dương / Blue Chest",
+  GREEN: "Rương xanh lá / Green Chest",
+  GOLD: "Rương vàng / Gold Chest",
+  DUNGEON: "Group Dungeon = maptier",
+  ROCK: "Đá / Stone",
+  LOGS: "Gỗ / Logs",
+  IRON: "Quặng / Ore",
+  HIRE: "Da / Hide",
+  COTTON: "Bông / Cloth",
 };
 
+// =======================
+// Express keep alive
+// =======================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// keep alive route
 app.get("/", (req, res) => {
-  res.send("✅ Bot is running and server is alive!");
+  res.send(" Bot is running and server is alive!");
 });
 
 app.listen(PORT, () => {
-  console.log(`Server chạy tại ${PORT}`);
+  console.log(` Server chạy tại ${PORT}`);
 });
+
+// =======================
+// Hàm log tiếng Việt
+// =======================
+function vietMessage(type, msg, data = null) {
+  const prefix = {
+    info: "[Thông tin]",
+    warn: "[Cảnh báo]",
+    error: "[Lỗi]",
+    success: "[Thành công]",
+  };
+  const tag = prefix[type] || "[Log]";
+  if (data) {
+    console.log(`${tag} ${msg}`, data);
+  } else {
+    console.log(`${tag} ${msg}`);
+  }
+}
+
 
 // =======================
 // Discord Bot
 // =======================
 const client = new Client({
- intents: [
-  GatewayIntentBits.Guilds,
-  GatewayIntentBits.GuildMessages,
-  GatewayIntentBits.MessageContent
-]
-
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 // check resources
@@ -58,13 +78,16 @@ async function findMaps(query) {
   return maps.map((map) => ({ name: map.name, value: map.name }));
 }
 
-client.on("ready", async () => {
-  console.log(`Bot login: ${client.user.tag}`);
+// =======================
+// Bot event
+// =======================
+client.once("clientReady", async () => {
+  vietMessage("success", `Bot đã đăng nhập thành công: ${client.user.tag}`);
   try {
     await connectDB();
-    console.log("MongoDB connected.");
+    vietMessage("success", "Kết nối MongoDB thành công.");
   } catch (err) {
-    console.error("MongoDB error:", err.message);
+    vietMessage("error", "Lỗi kết nối MongoDB:", err.message);
   }
 });
 
@@ -73,23 +96,31 @@ client.on("interactionCreate", async (interaction) => {
     const focusedValue = interaction.options.getFocused();
     try {
       const choices = await findMaps(focusedValue);
-      await interaction.respond(choices);
+      await interaction.respond(choices.slice(0, 25));
     } catch (error) {
-      console.error("Autocomplete error:", error);
+      vietMessage("error", "Autocomplete lỗi:", error);
+      return interaction.respond([]);
     }
   }
 
-  if (interaction.isChatInputCommand() && interaction.commandName === "checkavalonmap") {
+  if (
+    interaction.isChatInputCommand() &&
+    interaction.commandName === "checkavalonmap"
+  ) {
     await interaction.deferReply();
     const mapName = interaction.options.getString("mapname");
     try {
       const doc = await checkResources(mapName);
-      if (!doc) return interaction.editReply(`Không tìm thấy bản đồ "${mapName}".`);
+      if (!doc) {
+        return interaction.editReply(`Không tìm thấy bản đồ "${mapName}".`);
+      }
 
       const resourceList = doc.icons
         .map((icon) => {
           const translatedName = rssTranslate[icon.alt] || icon.alt;
-          return icon.badge ? `• ${translatedName} x${icon.badge}` : `• ${translatedName}`;
+          return icon.badge
+            ? `• ${translatedName} x${icon.badge}`
+            : `• ${translatedName}`;
         })
         .join("\n");
 
@@ -104,50 +135,48 @@ client.on("interactionCreate", async (interaction) => {
 
       interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      console.error("Command error:", err);
+      vietMessage("error", "Lỗi khi xử lý command:", err);
       interaction.editReply("Đã xảy ra lỗi khi truy vấn dữ liệu.");
     }
   }
 });
 
 // =======================
-// Auto reconnect logic
+// Log status bot & DB
 // =======================
-
-// Nếu DB mất kết nối → reconnect
 mongoose.connection.on("disconnected", () => {
-  console.error("Chết cụ db rồi dcm, reconnect...");
+  vietMessage("warn", " DB chết cụ r dcm. reconnect sau 5s...");
   setTimeout(connectDB, 5000);
 });
 
-// Nếu bot mất heartbeat → reconnect thay vì kill
-let lastHeartbeat = Date.now();
-client.ws.on("heartbeat", () => {
-  lastHeartbeat = Date.now();
+client.on("shardDisconnect", (event, shardId) => {
+  vietMessage("warn", `Bot (shard ${shardId}) vừa mất kết nối Discord.`, event);
 });
 
-let reconnecting = false;
+client.on("shardReconnecting", (shardId) => {
+  vietMessage("info", `Bot (shard ${shardId}) đang cố gắng kết nối lại...`);
+});
 
-setInterval(() => {
-  if (Date.now() - lastHeartbeat > 30000 && !reconnecting) {
-    reconnecting = true;
-    console.error(" Bot mất heartbeat. Đang reconnect...");
-    client.destroy();
-    client.login(DC_TOKEN).then(() => {
-      reconnecting = false;
-    });
-  }
-}, 10000);
+client.on("shardError", (error, shardId) => {
+  vietMessage("error", `Bot (shard ${shardId}) gặp lỗi.`, error);
+});
 
+client.on("invalidated", () => {
+  vietMessage("error", " Kết nối bot bị vô hiệu hóa! Cần login lại bằng token mới.");
+});
 
-// Catch unhandled errors nhưng không kill
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("[Unhandled Rejection]", reason);
+// =======================
+// Error Handling
+// =======================
+process.on("unhandledRejection", (reason) => {
+  vietMessage("error", "[Unhandled Rejection]", reason);
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[Uncaught Exception]", err);
+  vietMessage("error", "[Uncaught Exception]", err);
 });
 
+// =======================
 // Start bot
+// =======================
 client.login(DC_TOKEN);

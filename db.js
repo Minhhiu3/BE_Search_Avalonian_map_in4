@@ -8,9 +8,9 @@ const connectDB = async () => {
       useUnifiedTopology: true,
     });
 
-    console.log(`✅ MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
+    console.log(` Chúc mừng bố đã kết nối db thành công vào: ${conn.connection.host}/${conn.connection.name}`);
   } catch (error) {
-    console.error(`❌ MongoDB connection error: ${error.message}`);
+    console.error(` dcm kết nối db 7 bại rồi: ${error.message}`);
     process.exit(1); // dừng app khi lỗi kết nối
   }
 };
