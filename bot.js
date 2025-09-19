@@ -33,7 +33,12 @@ app.listen(PORT, () => {
 // Discord Bot
 // =======================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+ intents: [
+  GatewayIntentBits.Guilds,
+  GatewayIntentBits.GuildMessages,
+  GatewayIntentBits.MessageContent
+]
+
 });
 
 // check resources
@@ -121,13 +126,19 @@ client.ws.on("heartbeat", () => {
   lastHeartbeat = Date.now();
 });
 
+let reconnecting = false;
+
 setInterval(() => {
-  if (Date.now() - lastHeartbeat > 30000) {
-    console.error("Bot mất heartbeat. Reconnect...");
+  if (Date.now() - lastHeartbeat > 30000 && !reconnecting) {
+    reconnecting = true;
+    console.error(" Bot mất heartbeat. Đang reconnect...");
     client.destroy();
-    client.login(DC_TOKEN);
+    client.login(DC_TOKEN).then(() => {
+      reconnecting = false;
+    });
   }
 }, 10000);
+
 
 // Catch unhandled errors nhưng không kill
 process.on("unhandledRejection", (reason, promise) => {
